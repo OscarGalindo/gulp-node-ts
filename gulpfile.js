@@ -1,49 +1,66 @@
-'use strict';
+"use strict";
 
-var gulp = require('gulp');
-var tsc = require('gulp-typescript');
-var tslint = require('gulp-tslint');
-var sourcemaps = require('gulp-sourcemaps');
-var del = require('del');
-var Config = require('./gulpfile.config');
-var nodemon = require('gulp-nodemon');
-var tsProject = tsc.createProject('tsd.json');
+//******************************************************************************
+//* DEPENDENCIES
+//******************************************************************************
+var gulp = require("gulp"),
+    tsc = require("gulp-typescript"),
+    runSequence = require("run-sequence"),
+    mochaTest = require('gulp-mocha'),
+    nodemon = require('gulp-nodemon'),
+    definitions = __dirname + "/tools/typings/**/*.ts";
 
-var config = new Config();
-
-gulp.task('ts-lint', function () {
-    return gulp.src(config.allTypeScript).pipe(tslint()).pipe(tslint.report('prose'));
+//******************************************************************************
+//* BUILD
+//******************************************************************************
+var tsProject = tsc.createProject('tsd.json', {
+    removeComments: true,
+    target: "ES5",
+    module: "commonjs",
+    declarationFiles: false,
+    noExternalResolve: true
 });
 
-gulp.task('compile-ts', function () {
-    var sourceTsFiles = [config.allTypeScript, config.libraryTypeScriptDefinitions];
-
-    var tsResult = gulp.src(sourceTsFiles)
-        .pipe(sourcemaps.init())
-        .pipe(tsc(tsProject));
-
-    tsResult.dts.pipe(gulp.dest(config.tsOutputPath));
-    return tsResult.js
-        .pipe(sourcemaps.write('.'))
-        .pipe(gulp.dest(config.tsOutputPath));
+gulp.task("build-source", function () {
+    return gulp.src([__dirname + "/src/**/**.ts", definitions])
+        .pipe(tsc(tsProject))
+        .js.pipe(gulp.dest(__dirname + "/build/src/"));
 });
 
-gulp.task('clean-ts', function (cb) {
-    var typeScriptGenFiles = [
-        config.tsOutputPath + '/**/*.js',
-        config.tsOutputPath + '/**/*.js.map',
-        '!' + config.tsOutputPath + '/lib'
-    ];
-
-    del(typeScriptGenFiles, cb);
+gulp.task("build-test", function () {
+    return gulp.src([__dirname + "/spec/*.spec.ts", definitions])
+        .pipe(tsc(tsProject))
+        .js.pipe(gulp.dest(__dirname + "/build/spec/"));
 });
 
+gulp.task("build", function (cb) {
+    runSequence("build-source", "build-test", cb);
+});
+
+//******************************************************************************
+//* TEST
+//******************************************************************************
+gulp.task("mocha", function () {
+    return gulp.src(__dirname + "/build/spec/**/*.js")
+        .pipe(mochaTest({reporter: 'dot'}))
+});
+
+gulp.task("test", function (cb) {
+    runSequence("build", "mocha", cb);
+});
+
+//******************************************************************************
+//* RUN
+//******************************************************************************
 gulp.task('watch', function () {
-    gulp.watch([config.allTypeScript], ['ts-lint', 'compile-ts']);
+    gulp.watch([__dirname + "/src/**/**.ts"], ["build-source"]);
 });
 
-gulp.task('nodemon', ['ts-lint', 'compile-ts', 'watch'], function () {
-    nodemon({script: './build/index.js'});
+gulp.task("nodemon", ["build-source", "watch"], function () {
+    nodemon({script: './build/src/index.js'});
 });
 
-gulp.task('default', ['ts-lint', 'compile-ts']);
+//******************************************************************************
+//* DEFAULT
+//******************************************************************************
+gulp.task("default", ["nodemon"]);
